@@ -1,0 +1,552 @@
+#!/usr/bin/env python3
+"""
+Semana 9 — Divide y Vencerás: Merge Sort
+Curso:  Estructura de Datos Básica
+Equipo: [Nombre del equipo]
+Integrantes: [Lista de nombres]
+Fecha:  [Fecha de entrega]
+
+Actualización (Experimento StreamMX):
+- Se agregó un experimento reproducible para demostrar la ESTABILIDAD de Merge Sort.
+- Se contrasta contra un algoritmo INESTABLE (selection sort) que puede romper el orden relativo en empates.
+- También se corrigió un bug en merge(): faltaba copiar los elementos restantes de la derecha.
+"""
+
+import time
+import random
+import copy
+
+from dataclasses import dataclass
+from datetime import date
+from collections import defaultdict
+from typing import Callable
+
+
+
+# ─────────────────────────────────────────────────────────────
+#  SECCIÓN 1: MERGE SORT
+# ─────────────────────────────────────────────────────────────
+
+# COMPRENDE-1: ¿Qué propiedad garantiza que merge() siempre
+#              produce un subarreglo ordenado?
+# el ciclo de fusion (while)
+
+# COMPRENDE-2: ¿Por qué el árbol de recursión tiene altura log₂(n)
+#              y qué implica eso para la complejidad total?
+# por que cada llamada recursiva divide el arreglo en mitades
+
+
+def merge_sort(arr: list, inicio: int, fin: int) -> None:
+    """
+    Ordena arr[inicio..fin] usando Merge Sort.
+    DECISIÓN: [¿Por qué usamos índices inicio/fin en lugar de
+               slicing y retornar un nuevo arreglo?]
+
+    Por que usar slicing consta de trabajar con copias de la lista anterior lo cual lo haria mas costoso
+    """
+    if inicio >= fin:
+        return  # Caso base: 0 o 1 elemento ya está ordenado
+
+    medio = (inicio + fin) // 2
+    merge_sort(arr, inicio, medio)
+    merge_sort(arr, medio + 1, fin)
+    merge(arr, inicio, medio, fin)
+
+
+def merge(arr: list, inicio: int, medio: int, fin: int) -> None:
+    """
+    Fusiona dos subarreglos ordenados: arr[inicio..medio] y arr[medio+1..fin].
+    DECISIÓN: [¿Por qué copiamos en arreglos auxiliares antes de fusionar?]
+
+    eso es porque durante la fusion sobreescribiremos el arreglo
+    """
+    izquierda = arr[inicio:medio + 1]
+    derecha = arr[medio + 1:fin + 1]
+
+    i = 0
+    j = 0
+    k = inicio
+
+    while i < len(izquierda) and j < len(derecha):
+        # DECISIÓN: [¿Por qué usamos <= y no < ?
+        #            ¿Qué efecto tiene sobre la estabilidad?]
+        # Se usa <= para que, si son iguales, se elija primero el de la izquierda.
+        # Eso conserva el orden relativo de empates (estabilidad).
+        if izquierda[i] <= derecha[j]:
+            arr[k] = izquierda[i]
+            i += 1
+        else:
+            arr[k] = derecha[j]
+            j += 1
+        k += 1
+
+    # copiar elementos restantes de izquierda
+    while i < len(izquierda):
+        arr[k] = izquierda[i]
+        i += 1
+        k += 1
+
+    # copiar elementos restantes de derecha (BUG CORREGIDO)
+    while j < len(derecha):
+        arr[k] = derecha[j]
+        j += 1
+        k += 1
+
+
+# ─────────────────────────────────────────────────────────────
+#  SECCIÓN 2: VERIFICACIÓN DE ESTABILIDAD
+# ─────────────────────────────────────────────────────────────
+
+def merge_sort_key(arr: list, inicio: int, fin: int, key) -> None:
+    """
+    Merge Sort estable para cualquier tipo de dato usando una función key.
+    La estabilidad se mantiene porque en merge_key usamos <= en empates.
+    """
+    if inicio >= fin:
+        return
+
+    medio = (inicio + fin) // 2
+    merge_sort_key(arr, inicio, medio, key)
+    merge_sort_key(arr, medio + 1, fin, key)
+    merge_key(arr, inicio, medio, fin, key)
+
+
+def merge_key(arr: list, inicio: int, medio: int, fin: int, key) -> None:
+    """Fusiona dos subarreglos ordenados comparando por key(item)."""
+    izquierda = arr[inicio:medio + 1]
+    derecha = arr[medio + 1:fin + 1]
+
+    i = 0
+    j = 0
+    k = inicio
+
+    while i < len(izquierda) and j < len(derecha):
+        # <= mantiene estabilidad: si key es igual, se elige el de la izquierda
+        if key(izquierda[i]) <= key(derecha[j]):
+            arr[k] = izquierda[i]
+            i += 1
+        else:
+            arr[k] = derecha[j]
+            j += 1
+        k += 1
+
+    while i < len(izquierda):
+        arr[k] = izquierda[i]
+        i += 1
+        k += 1
+
+    while j < len(derecha):
+        arr[k] = derecha[j]
+        j += 1
+        k += 1
+
+
+# ─────────────────────────────────────────────────────────────
+#  SECCIÓN 2B: EXPERIMENTO STREAMMX (ESTABILIDAD VS INESTABILIDAD)
+# ─────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class RegistroStreamMX:
+    """
+    Estructura mínima para el experimento:
+    - id: para rastrear el orden relativo (necesario para probar estabilidad).
+    - fecha_estreno: clave cronológica (primera ordenación).
+    - puntaje: clave del ranking (segunda ordenación).
+    """
+    id: int
+    fecha_estreno: date
+    puntaje: float
+    titulo: str
+
+
+def _ids_por_puntaje_en_orden(registros: list[RegistroStreamMX]) -> dict[float, list[int]]:
+    """Agrupa los IDs por puntaje respetando el orden actual en la lista."""
+    grupos = defaultdict(list)
+    for r in registros:
+        grupos[r.puntaje].append(r.id)
+    return dict(grupos)
+
+
+def _assert_estabilidad_preservada(antes: list[RegistroStreamMX],
+                                  despues: list[RegistroStreamMX]) -> None:
+    """
+    Verificación automática (aserción):
+    Para cada puntaje con duplicados, la secuencia de IDs debe ser la misma
+    antes y después del sort por puntaje.
+    """
+    ids_antes = _ids_por_puntaje_en_orden(antes)
+    ids_despues = _ids_por_puntaje_en_orden(despues)
+
+    for puntaje, seq_antes in ids_antes.items():
+        if len(seq_antes) > 1:  # solo importan los empates
+            assert seq_antes == ids_despues.get(puntaje, []), (
+                f"Estabilidad rota para puntaje={puntaje}\n"
+                f"antes:   {seq_antes}\n"
+                f"después: {ids_despues.get(puntaje, [])}"
+            )
+
+
+def selection_sort_inestable(registros: list[RegistroStreamMX],
+                             key: Callable[[RegistroStreamMX], float],
+                             reverse: bool = False) -> list[RegistroStreamMX]:
+    """
+    Selection sort para CONTRASTE.
+    Teóricamente, selection sort NO es estable: un swap puede mover elementos empatados.
+    Implementación: en empates, elegimos el candidato de más a la derecha para inducir
+    reordenamientos y evidenciar la inestabilidad con más probabilidad.
+    """
+    a = registros[:]  # copia
+    n = len(a)
+
+    for i in range(n):
+        sel = i
+        for j in range(i + 1, n):
+            kj = key(a[j])
+            ks = key(a[sel])
+
+            if reverse:
+                if kj > ks or (kj == ks and j > sel):
+                    sel = j
+            else:
+                if kj < ks or (kj == ks and j > sel):
+                    sel = j
+
+        a[i], a[sel] = a[sel], a[i]  # swap => rompe estabilidad en ciertos casos
+
+    return a
+
+
+def experimento_streammx_estabilidad():
+    """
+    Experimento:
+    1) Ordenar por fecha ascendente (más antiguo -> más nuevo). (Paso 1 StreamMX)
+    2) Ordenar por puntaje desc (mayor -> menor) usando Merge Sort estable. (Paso 2)
+    3) Verificar con aserción que empates de puntaje conservan el orden cronológico.
+    4) Contrastar con un algoritmo inestable (selection sort).
+    """
+    # Dataset con empates (misma puntuación pero distinta fecha)
+    registros = [
+        RegistroStreamMX(1, date(2018, 5, 1),  9.5, "Pelicula_C"),
+        RegistroStreamMX(2, date(2020, 6, 10), 9.5, "Pelicula_E"),
+        RegistroStreamMX(3, date(2023, 7, 20), 9.5, "Pelicula_G"),
+
+        RegistroStreamMX(4, date(2010, 1, 1),  8.0, "Pelicula_A"),
+        RegistroStreamMX(5, date(2022, 12, 1), 8.0, "Pelicula_F"),
+
+        RegistroStreamMX(6, date(2011, 9, 9),  7.2, "Pelicula_B"),
+        RegistroStreamMX(7, date(2019, 3, 15), 7.2, "Pelicula_D"),
+        RegistroStreamMX(8, date(2024, 2, 2),  7.2, "Pelicula_H"),
+
+        RegistroStreamMX(9, date(2016, 8, 8),  9.1, "Pelicula_I"),  # puntaje único
+    ]
+
+    # Paso 1: cronológico
+    cronologico = sorted(registros, key=lambda r: r.fecha_estreno)
+    print("PASO 1 (orden por fecha ascendente):")
+    for r in cronologico:
+        print((r.titulo, r.puntaje, r.fecha_estreno, r.id))
+
+    grupos_antes = _ids_por_puntaje_en_orden(cronologico)
+
+    # Paso 2: ranking por puntaje desc con Merge Sort estable
+    estable = cronologico[:]  # copiamos para no destruir el cronológico
+    # Truco: como merge_sort_key ordena ascendente, usamos -puntaje para simular desc.
+    merge_sort_key(estable, 0, len(estable) - 1, key=lambda r: -r.puntaje)
+
+    print("\nPASO 2 (orden por puntaje desc con Merge Sort ESTABLE):")
+    for r in estable:
+        print((r.titulo, r.puntaje, r.fecha_estreno, r.id))
+
+    # Aserción: estabilidad preservada
+    _assert_estabilidad_preservada(cronologico, estable)
+
+    print("\nVerificación de estabilidad (solo puntajes con empates):")
+    grupos_despues = _ids_por_puntaje_en_orden(estable)
+    for p in sorted(grupos_antes.keys(), reverse=True):
+        if len(grupos_antes[p]) > 1:
+            print(f"puntaje={p}: antes={grupos_antes[p]} después={grupos_despues[p]}")
+
+    # Contraste con algoritmo inestable
+    inestable = selection_sort_inestable(cronologico, key=lambda r: r.puntaje, reverse=True)
+    print("\nCONTRASTE (orden por puntaje desc con algoritmo INESTABLE):")
+    for r in inestable:
+        print((r.titulo, r.puntaje, r.fecha_estreno, r.id))
+
+    try:
+        _assert_estabilidad_preservada(cronologico, inestable)
+        print("\n[ALERTA] En este dataset el sort inestable no rompió la estabilidad (puede pasar por coincidencia).")
+        print("        Si ocurre, agrega más empates o cambia el orden de entrada.")
+    except AssertionError as e:
+        print("\n[OK] Se demostró ruptura de estabilidad con algoritmo inestable:")
+        print(e)
+
+
+def merge_sort_estable_demo():
+    """
+    Demuestra que Merge Sort es estable:
+    elementos con la misma clave mantienen su orden relativo original.
+
+    Contexto StreamMX: registros ordenados primero por fecha, luego por puntaje.
+    Si el algoritmo es estable, películas con el mismo puntaje mantienen
+    el orden cronológico de la ordenación anterior.
+
+    REFLEXIONA-2: [Escribe aquí qué observó el equipo — ¿se mantuvo el orden?
+                  ¿Qué hubiera pasado con un algoritmo inestable?]
+
+    al ordenar el puntaje con merge las peliculas con el mismo puntaje conservaron su orden. so el algoritmo
+    hubiese sido inestable ese orden se habria desvanecido y se perderia el orden ya establecido
+    """
+    # Simulación: (titulo, puntaje, posicion_original_cronologica)
+    registros = [
+        ("Pelicula_C", 90, 1),   # más antigua con puntaje 90
+        ("Pelicula_A", 85, 2),
+        ("Pelicula_E", 90, 3),   # más reciente con puntaje 90
+        ("Pelicula_B", 75, 4),
+        ("Pelicula_D", 85, 5),
+    ]
+
+    print("ANTES (cronológico):")
+    for r in registros:
+        print(r)
+
+    # Ordenar por puntaje usando merge_sort_key (estable)
+    merge_sort_key(registros, 0, len(registros) - 1, key=lambda x: x[1])
+
+    print("\nDESPUÉS (ordenado por puntaje, estable):")
+    for r in registros:
+        print(r)
+
+    print("\nVerificación de estabilidad (mismo puntaje mantiene orden):")
+    print("- Puntaje 90 debe quedar Pelicula_C antes que Pelicula_E")
+    print("- Puntaje 85 debe quedar Pelicula_A antes que Pelicula_D")
+
+
+# ─────────────────────────────────────────────────────────────
+#  SECCIÓN 3: BENCHMARKING vs SEMANA 8
+# ─────────────────────────────────────────────────────────────
+
+def bubble_sort_s8(arr: list) -> None:
+    """Referencia de Semana 8 para comparación empírica."""
+    n = len(arr)
+    for i in range(n):
+        for j in range(n - i - 1):
+            if arr[j] > arr[j + 1]:
+                arr[j], arr[j + 1] = arr[j + 1], arr[j]
+
+
+def medir_tiempo(func, arr: list, *args) -> float:
+    """Mide tiempo sobre una copia — el arreglo original no se modifica."""
+    copia = copy.deepcopy(arr)
+    inicio = time.perf_counter()
+    func(copia, *args)
+    fin = time.perf_counter()
+    return round(fin - inicio, 6)
+
+
+def generar_arreglo(n: int, distribucion: str) -> list:
+    if distribucion == 'aleatorio':
+        return [random.randint(0, n * 10) for _ in range(n)]
+    elif distribucion == 'ordenado':
+        return list(range(n))
+    elif distribucion == 'inverso':
+        return list(range(n, 0, -1))
+    raise ValueError(f"Distribución desconocida: {distribucion}")
+
+
+def benchmark_completo():
+    """
+    ESTRATEGIA: [Antes de ejecutar, escribe aquí la predicción del equipo:
+                 ¿Cuánto esperan que mejore Merge Sort sobre Bubble Sort para n=100 000?
+                 ¿En qué distribución esperan la mayor diferencia?]
+
+    esperamos que merge sort sea mucho mas rapido que bubble sort, y mas con n tan grande, esto debido a que merge es n log n y bubble
+    es on^2. creemos que la mayor diferencia sera en el arreglos inversos
+    """
+    tamanios = [1_000, 10_000, 100_000]
+    distribuciones = ['aleatorio', 'ordenado', 'inverso']
+
+    print(f"{'Algoritmo':<18} {'n':>8} {'Distribución':<12} {'Tiempo (s)':>12}")
+    print("-" * 58)
+
+    for n in tamanios:
+        for dist in distribuciones:
+            arr = generar_arreglo(n, dist)
+
+            t_merge = medir_tiempo(merge_sort, arr, 0, len(arr) - 1)
+
+            # Solo incluir Bubble Sort para n <= 10_000 (O(n²) es muy lento para 100k)
+            if n <= 10_000:
+                t_bubble = medir_tiempo(bubble_sort_s8, arr)
+                print(f"{'Bubble Sort (S8)':<18} {n:>8} {dist:<12} {t_bubble:>12.6f}")
+
+            print(f"{'Merge Sort':<18} {n:>8} {dist:<12} {t_merge:>12.6f}")
+        print()
+
+    # VALIDA: [Documenta aquí si los tiempos son consistentes con O(n log n):
+    #          al pasar de n=1000 a n=10000 (×10), ¿el tiempo creció ×33 o ×100?]
+    # crecio aproximadamente como un x13, si fuese bubble sort creceria x100
+
+
+# ─────────────────────────────────────────────────────────────
+#  EJECUCIÓN
+# ─────────────────────────────────────────────────────────────
+if __name__ == '__main__':
+    prueba = [64, 34, 25, 12, 22, 11, 90]
+    copia = prueba[:]
+    merge_sort(copia, 0, len(copia) - 1)
+    print("Merge Sort:", copia)   # Esperado: [11, 12, 22, 25, 34, 64, 90]
+
+    print("\n--- DEMO ESTABILIDAD (tuplas) ---")
+    merge_sort_estable_demo()
+
+    print("\n--- EXPERIMENTO STREAMMX (estabilidad vs inestabilidad) ---")
+    experimento_streammx_estabilidad()
+
+    print("\n--- BENCHMARK vs SEMANA 8 ---\n")
+    benchmark_completo()
+
+    # IA-REFLEXION-A: [En 3 líneas: qué pista exacta de la IA durante
+    #                  APLICA te hizo entender el rol de los arreglos
+    #                  auxiliares en merge() — y por qué no se puede
+    #                  fusionar sin ellos directamente sobre arr]
+    #fue que al no usar copias se pueden sobreescribir los datos
+
+    # REFLEXIONA-2:conclusión del equipo sobre qué 
+    # implicaría un algoritmo inestable para los usuarios 
+    # finales de StreamMX.
+    #que el ranking sea inconsistente
+
+    # IA-REFLEXION-B: En 3 líneas: qué pregunta del diseñador
+    #  IA te hizo entender la diferencia entre ordenar estable
+    #  e inestable desde la perspectiva del usuario (no solo del
+    #  algoritmo).
+    #en ninguna ya que como posible usuario era algo logico
+
+
+# ─────────────────────────────────────────────────────────────
+#  FASE 3 REFLEXIONA
+# ─────────────────────────────────────────────────────────────
+#1.- predecia que el merge sort seria mas eficaz que el bubble sort y si,
+#    merge escalo mejor con n y era mas veloz
+#2.- como conclusion pienso que bubble sort es muy inestable y merge era la
+#    mejor opcion por mucho, ya que merge siempre tendra la misma complejidad 
+#    incluso en el peor de los escenarios
+#3.- Veredicto final: Aprobado con rescate
+#    Justificación: Lograste enunciar el concepto central después de andamiaje. 
+#    Entiendes lo esencial, aunque la precisión técnica puede mejorar.
+# ─────────────────────────────────────────────────────────────
+
+
+# ─────────────────────────────────────────────────────────────
+#  FASE 4 VALIDA
+# ─────────────────────────────────────────────────────────────
+def merge_sort_llamada(merge_sort_funcion, arr):
+    """
+    Soporta:
+      merge sort(arr, 0, n-1) in-place
+      merge sort(arr) -> (nuevo) o None (in-place)
+    """
+    try:
+        merge_sort_funcion(arr, 0, len(arr) - 1)
+        return arr
+    except TypeError:
+        out = merge_sort_funcion(arr)
+        return out if out is not None else arr
+
+
+def conteo_multiconjunto(seq):
+    """Conteo tipo multiconjunto sin librerías."""
+    d = {}
+    for x in seq:
+        d[x] = d.get(x, 0) + 1
+    return d
+
+
+def Caso_1(merge):
+    """
+    Caso 1:
+    Entrada: arr=[2,1], merge(0,0,1)
+    Esperado: [1,2]
+    """
+    arr = [2, 1]
+    merge(arr, 0, 0, 1)  # L=[2], R=[1]
+    assert arr == [1, 2], (
+        "Caso 1: merge() falló con subarreglo izquierdo instancia unica. "
+        "Posible off-by-one en n1=(medio-inicio+1) o en copias/remanentes."
+    )
+
+
+def Caso2(merge_sort):
+    """
+    Caso 2: detecta bug en cálculo del punto medio ( / en Py3 => float) que puede causar pérdida de elementos.
+    Entrada: tamaño impar fuerza mid no entero si usan '/'.
+    Verifica orden + integridad (no pierde/duplica).
+    """
+    arr = [5, 4, 3, 2, 1]
+    original = arr[:]
+
+    out = merge_sort_llamada(merge_sort, arr[:])
+
+    assert out == [1, 2, 3, 4, 5], (
+        "Caso 2: merge_sort() no ordenó correctamente en tamaño impar; "
+        "posible bug de mid (usar / en vez de //) o rangos recursivos mal definidos."
+    )
+    assert conteo_multiconjunto(out) == conteo_multiconjunto(original), (
+        "Caso 2: merge_sort() perdió o duplicó elementos; "
+        "esto suele ocurrir cuando el punto medio produce particiones con huecos/solapes."
+    )
+
+
+def Caso3(merge_sort):
+    """
+    Caso 3: estabilidad con tuplas (puntaje,titulo) con puntaje igual.
+    Requisito: si el criterio de ordenación es el puntaje, entonces para puntajes iguales
+    el orden relativo ORIGINAL debe preservarse: 'A-first' antes que 'B-second'.
+    """
+    arr = [
+        (10, "A-first"),
+        (5,  "X"),
+        (10, "B-second"),
+        (7,  "Y"),
+    ]
+
+    out = merge_sort_llamada(merge_sort, arr[:])
+
+    expected = [
+        (5,  "X"),
+        (7,  "Y"),
+        (10, "A-first"),
+        (10, "B-second"),
+    ]
+
+    assert out == expected, (
+        "Caso 3: inestabilidad detectada con puntajes iguales. "
+        "Causas típicas: en merge() elegir del lado derecho en empate (usar '<' en vez de '<='), "
+        "o comparar tuplas completas y reordenar por 'titulo' en lugar de preservar estabilidad."
+    )
+
+
+def Caso4(merge):
+    """
+    Caso 4: revela si los arreglos auxiliares en merge() se crean/copian bien cuando inicio != 0.
+    Probamos un merge interno: arr[2..5] contiene dos mitades ya ordenadas:
+      L = [1,3] (2..3) y R=[2,4] (4..5)
+    Esperado: solo se reordena ese segmento, sin corromper prefijo/sufijo.
+    """
+    arr = [99, 98, 1, 3, 2, 4, 97]
+    merge(arr, inicio=2, medio=3, fin=5)
+    assert arr == [99, 98, 1, 2, 3, 4, 97], (
+        "Caso 4: merge() falló con inicio != 0. "
+        "Causas típicas: auxiliares creados desde índice 0 en vez de 'inicio', "
+        "o escritura de vuelta con k=0 en vez de k=inicio."
+    )
+
+
+def run_all(merge_sort, merge):
+    Caso_1(merge)
+    Caso2(merge_sort)
+    Caso3(merge_sort)
+    Caso4(merge)
+    print("OK: todos los casos adversariales pasaron (aserciones).")
+
+
